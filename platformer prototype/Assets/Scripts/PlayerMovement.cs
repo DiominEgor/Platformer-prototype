@@ -2,7 +2,6 @@ using System;
 using NUnit.Framework.Constraints;
 using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 public class PlayerMovement : MonoBehaviour
 {
@@ -21,13 +20,12 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float doubleJumpForce = 10;
     [SerializeField] private Vector2 wallJumpForce = new Vector2(4f, 10f);
     private bool isWallJumping;
-    private bool isJumping;
     private bool canDoubleJump;
 
 
     [Header("WallSliding")]
+    [SerializeField] private int wallSlideSpeed = 2;
     private bool isWallSliding;
-    private int wallSlideSpeed = 2;
 
 
     [Header("Utilities")]
@@ -35,8 +33,14 @@ public class PlayerMovement : MonoBehaviour
     private float halfPlayerHight;
     private float halfPlayerWidth;
 
+    private bool isGrounded;
+    private int wallDirection;
 
 
+    void Awake()
+    {
+        playerRb = GetComponent<Rigidbody2D>();
+    }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -44,19 +48,17 @@ public class PlayerMovement : MonoBehaviour
         halfPlayerHight = spriteRenderer.bounds.extents.y;
         halfPlayerWidth = spriteRenderer.bounds.extents.x;
     }
-    void Awake()
-    {
-        playerRb = GetComponent<Rigidbody2D>();
-    }
 
     // Update is called once per frame
     void Update()
     {
-        CharacterFlip();
-        WallSlide();
-
         horizontalInput = Input.GetAxisRaw("Horizontal");
 
+        isGrounded = IsOnGround();
+        wallDirection = GetWallTouch();
+
+        CharacterFlip();
+        WallSlide();
 
         if (Input.GetButtonDown("Jump"))
         {
@@ -66,60 +68,71 @@ public class PlayerMovement : MonoBehaviour
         // для дебага
         Debug.DrawRay(transform.position, Vector2.down * (halfPlayerHight + 0.1f), Color.red);
         Debug.DrawRay(transform.position, Vector2.right * (halfPlayerWidth + 0.1f), Color.blue);
+        Debug.DrawRay(transform.position, Vector2.left * (halfPlayerWidth + 0.1f), Color.blue);
     }
 
     void FixedUpdate()
     {
         Move();
 
-        //проверка земли и обновление всякой шляпы
-        bool grounded = IsOnGround();
-        if (grounded && playerRb.linearVelocity.y <= 0.1f)
+        UpdatePlayerState();
+        UpdateAnimator();
+    }
+
+    //менеджер состояний
+    private void UpdatePlayerState()
+    {
+        if (isGrounded && playerRb.linearVelocity.y <= 0.1f)
         {
             canDoubleJump = true;
             isWallJumping = false;
-            isJumping = false;
         }
+    }
 
-        //контроль и апдейт анимаций
-        animator.SetFloat("VerticalVelocity", playerRb.linearVelocity.y);
-        animator.SetFloat("HorizontalVelocity", Math.Abs(playerRb.linearVelocity.x));
-        animator.SetBool("isJumping", isJumping);
+    //менеджер анимаций
+    private void UpdateAnimator()
+    {
+        float vertivalVelocity = playerRb.linearVelocity.y;
+        float horizontalVelocity = Math.Abs(playerRb.linearVelocity.x);
+
+        animator.SetFloat("VerticalVelocity", vertivalVelocity);
+        animator.SetFloat("HorizontalVelocity", horizontalVelocity);
+        animator.SetBool("isGrounded", isGrounded);
+        animator.SetBool("isWallJumping", isWallJumping);
         animator.SetBool("isWallSliding", isWallSliding);
     }
 
     //определить какой прыжок
     private void JumpType()
     {
-        bool isGrounded = IsOnGround();
         if (isGrounded)
         {
             Jump(jumpForce);
+            return;
         }
-        else
+
+        if (wallDirection != 0)
         {
-            int direction = GetWallTouch();
+            WallJump(wallDirection);
+            return;
+        }
 
-            if (direction == 0 && canDoubleJump)
-            {
-                DoubleJump();
-            }
-            else if (direction != 0)
-            {
-                WallJump(direction);
-            }
-
+        if (canDoubleJump)
+        {
+            DoubleJump();
         }
     }
 
     //регать касание стены через рэйкаст
     private int GetWallTouch()
     {
-        if (Physics2D.Raycast(transform.position, Vector2.right, halfPlayerWidth + 0.1f, LayerMask.GetMask("Wall")))
+        int wallLayer = LayerMask.GetMask("Wall");
+
+        if (Physics2D.Raycast(transform.position, Vector2.right, halfPlayerWidth + 0.1f, wallLayer))
         {
             return -1;
         }
-        if (Physics2D.Raycast(transform.position, Vector2.left, halfPlayerWidth + 0.1f, LayerMask.GetMask("Wall")))
+        if (Physics2D.Raycast(transform.position, Vector2.left, halfPlayerWidth + 0.1f, wallLayer))
         {
             return 1;
         }
@@ -150,8 +163,8 @@ public class PlayerMovement : MonoBehaviour
     //прыжок
     private void Jump(float force)
     {
+        playerRb.linearVelocity = new Vector2(playerRb.linearVelocity.x, 0f);
         playerRb.AddForce(Vector2.up * force, ForceMode2D.Impulse);
-        isJumping = true;
     }
 
     //двойной прыжок
@@ -172,7 +185,6 @@ public class PlayerMovement : MonoBehaviour
         playerRb.angularVelocity = 0f;
         isWallSliding = false;
         isWallJumping = true;
-        isJumping = true;
         Debug.Log(isWallJumping);
         playerRb.AddForce(force, ForceMode2D.Impulse);
     }
@@ -180,12 +192,11 @@ public class PlayerMovement : MonoBehaviour
     //чтобы чел съезжал вниз по стене, а не падал, когда я жму передвижение
     private void WallSlide()
     {
-        if (!IsOnGround() && GetWallTouch() != 0 && horizontalInput != 0)
+        if (!isGrounded && wallDirection != 0 && horizontalInput != 0 && playerRb.linearVelocity.y <= 0)
         {
             Debug.Log("touch");
             isWallSliding = true;
-            isJumping = false;
-            transform.localScale = new Vector3(GetWallTouch(), 1, 1);
+            transform.localScale = new Vector3(wallDirection, 1, 1);
             playerRb.linearVelocity = new Vector2(playerRb.linearVelocity.x, Mathf.Max(playerRb.linearVelocity.y, -wallSlideSpeed));
 
         }
