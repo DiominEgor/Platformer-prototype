@@ -38,6 +38,24 @@ TagManager:
   - 
   - 
   m_SortingLayers:
+  - name: 1Sky
+    uniqueID: 15125201
+    locked: 0
+  - name: 2Castle
+    uniqueID: 2022269347
+    locked: 0
+  - name: 3Mountains
+    uniqueID: 3595356293
+    locked: 0
+  - name: 4Forest
+    uniqueID: 416648633
+    locked: 0
+  - name: 5Forest
+    uniqueID: 358771021
+    locked: 0
+  - name: 6Forest
+    uniqueID: 2774888685
+    locked: 0
   - name: Default
     uniqueID: 0
     locked: 0
